@@ -35,6 +35,7 @@ import glob
 import json
 import os
 import subprocess
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -195,10 +196,20 @@ def load_cache() -> dict:
 
 
 def write_cache(d: dict):
+    """Write cache dict to CACHE atomically with mode 0o600 (owner r/w only)."""
     d["fetched_ms"] = int(time.time() * 1000)
-    tmp = CACHE + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump(d, fh)
+    cache_dir = os.path.dirname(CACHE)
+    fd, tmp = tempfile.mkstemp(dir=cache_dir, prefix=".session-usage-", suffix=".tmp")
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(d, fh)
+    except:
+        try:
+            os.unlink(tmp)
+        except OSError:  # pragma: no cover
+            pass         # pragma: no cover
+        raise
     os.replace(tmp, CACHE)
 
 
@@ -238,5 +249,5 @@ def main():
                      "reset7d_ms": prev.get("reset7d_ms")})
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     main()

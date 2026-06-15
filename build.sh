@@ -28,5 +28,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 PLIST
 
 # Ad-hoc sign so macOS lets it run without quarantine nags.
-codesign --force --sign - "$APP" 2>/dev/null || true
+# --options runtime enables Hardened Runtime, blocking DYLD injection.
+if ! codesign --force --sign - --options runtime "$APP"; then
+  echo "⚠ codesign failed — widget may not launch on recent macOS"
+fi
 echo "Built: $APP"

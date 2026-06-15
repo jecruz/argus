@@ -35,6 +35,7 @@ cp -R "$DIR/SessionWidget.app" "$APP_DEST"
 
 # --- 2. widget launch agent ----------------------------------------------
 mkdir -p "$LA"
+mkdir -p "$HOME/.claude/logs"
 cat > "$LA/$WIDGET_LABEL.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -45,8 +46,8 @@ cat > "$LA/$WIDGET_LABEL.plist" <<EOF
   <array><string>$APP_DEST/Contents/MacOS/SessionWidget</string></array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>/tmp/claude-session-widget.log</string>
-  <key>StandardErrorPath</key><string>/tmp/claude-session-widget.log</string>
+  <key>StandardOutPath</key><string>$HOME/.claude/logs/session-widget.log</string>
+  <key>StandardErrorPath</key><string>$HOME/.claude/logs/session-widget.log</string>
 </dict>
 </plist>
 EOF
@@ -59,7 +60,11 @@ if [[ "$WITH_POLLER" == "1" ]]; then
   # Must live outside ~/Documents or macOS TCC blocks launchd from reading it.
   mkdir -p "$HOME/.claude"
   cp "$DIR/session_usage_poll.py" "$POLLER_DEST"
-  PY="$(command -v python3 || echo /usr/bin/python3)"
+  if [[ -x /usr/bin/python3 ]]; then
+    PY="/usr/bin/python3"
+  else
+    PY="$(command -v python3 || { echo "✗ python3 not found"; exit 1; })"
+  fi
   cat > "$LA/$POLLER_LABEL.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -72,8 +77,8 @@ if [[ "$WITH_POLLER" == "1" ]]; then
   <dict><key>ANTHROPIC_API_KEY</key><string></string></dict>
   <key>RunAtLoad</key><true/>
   <key>StartInterval</key><integer>600</integer>
-  <key>StandardOutPath</key><string>/tmp/claude-session-usage.log</string>
-  <key>StandardErrorPath</key><string>/tmp/claude-session-usage.log</string>
+  <key>StandardOutPath</key><string>$HOME/.claude/logs/session-poller.log</string>
+  <key>StandardErrorPath</key><string>$HOME/.claude/logs/session-poller.log</string>
 </dict>
 </plist>
 EOF
@@ -86,7 +91,7 @@ EOF
     echo "✓ first poll wrote ~/.claude/session-usage.json"
   else
     echo "… no cache yet — it writes on the next run once you've used Claude Code."
-    echo "  Check /tmp/claude-session-usage.log if it never appears."
+    echo "  Check ~/.claude/logs/session-poller.log if it never appears."
   fi
 else
   echo "• skipping poller (--widget-only): widget will show a transcript estimate."
