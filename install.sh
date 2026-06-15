@@ -11,10 +11,16 @@ set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 UIDN="$(id -u)"
 LA="$HOME/Library/LaunchAgents"
-APP_DEST="$HOME/Applications/SessionWidget.app"
+APP_DEST="$HOME/Applications/Argus.app"
 POLLER_DEST="$HOME/.claude/session_usage_poll.py"
-WIDGET_LABEL="com.claude-session-widget.app"
-POLLER_LABEL="com.claude-session-widget.poller"
+WIDGET_LABEL="com.caiss.argus"
+POLLER_LABEL="com.caiss.argus.poller"
+
+# Clean up old com.claude-session-widget.* agents if present.
+for old_label in com.claude-session-widget.app com.claude-session-widget.poller; do
+  launchctl bootout "gui/$UIDN/$old_label" 2>/dev/null || true
+  rm -f "$LA/$old_label.plist"
+done
 
 WITH_POLLER=1
 [[ "${1:-}" == "--widget-only" ]] && WITH_POLLER=0
@@ -31,7 +37,7 @@ echo "→ building widget…"
 bash "$DIR/build.sh" >/dev/null
 mkdir -p "$HOME/Applications"
 rm -rf "$APP_DEST"
-cp -R "$DIR/SessionWidget.app" "$APP_DEST"
+cp -R "$DIR/Argus.app" "$APP_DEST"
 
 # --- 2. widget launch agent ----------------------------------------------
 mkdir -p "$LA"
@@ -46,8 +52,8 @@ cat > "$LA/$WIDGET_LABEL.plist" <<EOF
   <array><string>$APP_DEST/Contents/MacOS/SessionWidget</string></array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>$HOME/.claude/logs/session-widget.log</string>
-  <key>StandardErrorPath</key><string>$HOME/.claude/logs/session-widget.log</string>
+  <key>StandardOutPath</key><string>$HOME/.claude/logs/argus.log</string>
+  <key>StandardErrorPath</key><string>$HOME/.claude/logs/argus.log</string>
 </dict>
 </plist>
 EOF
@@ -77,8 +83,8 @@ if [[ "$WITH_POLLER" == "1" ]]; then
   <dict><key>ANTHROPIC_API_KEY</key><string></string></dict>
   <key>RunAtLoad</key><true/>
   <key>StartInterval</key><integer>600</integer>
-  <key>StandardOutPath</key><string>$HOME/.claude/logs/session-poller.log</string>
-  <key>StandardErrorPath</key><string>$HOME/.claude/logs/session-poller.log</string>
+  <key>StandardOutPath</key><string>$HOME/.claude/logs/argus-poller.log</string>
+  <key>StandardErrorPath</key><string>$HOME/.claude/logs/argus-poller.log</string>
 </dict>
 </plist>
 EOF
@@ -91,12 +97,12 @@ EOF
     echo "✓ first poll wrote ~/.claude/session-usage.json"
   else
     echo "… no cache yet — it writes on the next run once you've used Claude Code."
-    echo "  Check ~/.claude/logs/session-poller.log if it never appears."
+    echo "  Check ~/.claude/logs/argus-poller.log if it never appears."
   fi
 else
   echo "• skipping poller (--widget-only): widget will show a transcript estimate."
 fi
 
 echo
-echo "Done. The widget appears top-right (drag to move, right-click for menu)."
+echo "Done. Argus appears top-right (drag to move, right-click for menu)."
 echo "Uninstall any time with ./uninstall.sh"

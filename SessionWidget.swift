@@ -1,13 +1,14 @@
-// SessionWidget — a tiny floating desktop widget that shows your current
-// Claude Code 5-hour usage window, a live "resets in" countdown, and % used.
+// Argus — CAISS Yield desktop widget.
+// Shows the Claude Code 5-hour usage window, a live "resets in" countdown,
+// and % used. Part of CAISS Yield (Redmine #1035, caiss-yield project).
 //
 // It reads the exact numbers from ~/.claude/session-usage.json (written by the
 // companion poller, session_usage_poll.py, which reads Anthropic's rate-limit
 // headers — so they match claude.ai). If that cache isn't present it falls back
 // to estimating the window from ~/.claude/projects/**/*.jsonl transcripts.
 //
-// Build:  bash build.sh   ->  SessionWidget.app
-// Run:    open SessionWidget.app   (or use install.sh for start-at-login)
+// Build:  bash build.sh   ->  Argus.app
+// Run:    open Argus.app   (or use install.sh for start-at-login)
 
 import Cocoa
 
