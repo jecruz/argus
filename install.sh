@@ -49,7 +49,7 @@ cat > "$LA/$WIDGET_LABEL.plist" <<EOF
 <dict>
   <key>Label</key><string>$WIDGET_LABEL</string>
   <key>ProgramArguments</key>
-  <array><string>$APP_DEST/Contents/MacOS/SessionWidget</string></array>
+  <array><string>$APP_DEST/Contents/MacOS/Argus</string></array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>StandardOutPath</key><string>$HOME/.claude/logs/argus.log</string>
