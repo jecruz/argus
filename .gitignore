@@ -3,3 +3,7 @@ SessionWidget.app/
 .DS_Store
 *.log
 build/
+__pycache__/
+*.pyc
+.coverage
+.pytest_cache/
