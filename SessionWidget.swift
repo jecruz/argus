@@ -62,6 +62,14 @@ struct SessionState {
     var source: String = "transcript"   // "api" = authoritative header; "transcript" = local estimate
 }
 
+struct CodexState {
+    var active: Bool
+    var tokensToday: Int64?
+    var sessionsToday: Int?
+    var lastActiveMs: Int64?
+    var topModel: String?
+}
+
 // MARK: - Authoritative usage cache
 //
 // session_usage_poll.py (launchd, every 10 min) writes the exact 5h reset and
@@ -92,6 +100,33 @@ enum UsageCache {
         // Reset has passed (or is null): idle, but keep the utilisation figures.
         return SessionState(active: false, startMs: nil, endMs: nil, lastActivityMs: nil,
                             util5h: util5, util7d: util7, source: src)
+    }
+}
+
+// MARK: - Codex usage cache
+//
+// codex_usage_poll.py writes ~/.claude/codex-usage.json with daily token totals
+// read from the OpenAI usage API. Returns nil when the file is absent/unreadable.
+enum CodexCache {
+    /** Returns the URL for the Codex usage cache file. */
+    static func url() -> URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude/codex-usage.json")
+    }
+
+    /** Loads Codex state from the cache file, or returns nil if absent/unreadable. */
+    static func load() -> CodexState? {
+        guard let data = try? Data(contentsOf: url()),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        let active   = (obj["active"] as? Bool) ?? false
+        let tokens   = (obj["tokens_today"] as? NSNumber)?.int64Value
+        let sessions = (obj["sessions_today"] as? NSNumber)?.intValue
+        let lastMs   = (obj["last_active_ms"] as? NSNumber)?.int64Value
+        let model    = obj["top_model"] as? String
+        return CodexState(active: active, tokensToday: tokens,
+                          sessionsToday: sessions, lastActiveMs: lastMs,
+                          topModel: model)
     }
 }
 
@@ -367,14 +402,65 @@ final class CardView: NSView {
     }
 }
 
+// MARK: - Codex card view
+
+/// Floating card showing daily Codex token usage. Same ivory background and
+/// corner radius as `CardView` but uses the full width — no mascot.
+final class CodexCardView: NSView {
+    let title = NSTextField(labelWithString: "Codex")
+    let big   = NSTextField(labelWithString: "—")
+    let sub   = NSTextField(labelWithString: "")
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layer?.cornerRadius = 16
+        layer?.masksToBounds = true
+        layer?.backgroundColor = Palette.ivory.cgColor
+
+        title.font = .systemFont(ofSize: 11, weight: .semibold)
+        title.textColor = Palette.muted
+        addSubview(title)
+
+        big.font = .monospacedDigitSystemFont(ofSize: 30, weight: .bold)
+        big.textColor = Palette.clay
+        addSubview(big)
+
+        sub.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+        sub.textColor = Palette.muted
+        addSubview(sub)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func layout() {
+        super.layout()
+        let pad: CGFloat = 16
+        let w = bounds.width, h = bounds.height
+        title.frame = NSRect(x: pad, y: h - 24, width: w - 2*pad, height: 16)
+        big.frame   = NSRect(x: pad, y: h - 64, width: w - 2*pad, height: 38)
+        sub.frame   = NSRect(x: pad, y: 10,     width: w - 2*pad, height: 16)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        window?.performDrag(with: event)
+    }
+    override func rightMouseDown(with event: NSEvent) {
+        if let m = (NSApp.delegate as? AppDelegate)?.contextMenu {
+            NSMenu.popUpContextMenu(m, with: event, for: self)
+        }
+    }
+}
+
 // MARK: - App
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var window: NSWindow!
     var card: CardView!
+    var codexCard: CodexCardView!
     var tick: Timer?
     var poll: Timer?
     var state = SessionState(active: false, startMs: nil, endMs: nil, lastActivityMs: nil)
+    var codexState = CodexState(active: false, tokensToday: nil, sessionsToday: nil, lastActiveMs: nil, topModel: nil)
     var contextMenu: NSMenu!
     var onTop = true
 
@@ -383,7 +469,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
-        let size = NSSize(width: 264, height: 108)
+        let size = NSSize(width: 264, height: 208)
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         let origin = NSPoint(x: screen.maxX - size.width - 24, y: screen.maxY - size.height - 24)
 
@@ -396,8 +482,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
         window.level = .floating
 
-        card = CardView(frame: NSRect(origin: .zero, size: size))
-        window.contentView = card
+        let contentView = NSView(frame: NSRect(origin: .zero, size: size))
+        contentView.wantsLayer = true
+        contentView.layer?.backgroundColor = NSColor.clear.cgColor
+        window.contentView = contentView
+
+        card = CardView(frame: NSRect(x: 0, y: 100, width: size.width, height: 108))
+        contentView.addSubview(card)
+
+        codexCard = CodexCardView(frame: NSRect(x: 0, y: 0, width: size.width, height: 96))
+        contentView.addSubview(codexCard)
 
         // Restore saved position only — keep the new size so the layout applies.
         if let s = UserDefaults.standard.string(forKey: defaultsKey) {
@@ -455,10 +549,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func refreshData() {
         let now = Date()
         let cached = UsageCache.load(now: now)
-        if let c = cached, c.active { state = c; return }
-        let t = Sessions.compute(now: now)
-        if t.active { state = t; return }
-        state = cached ?? t
+        if let c = cached, c.active {
+            state = c
+        } else {
+            let t = Sessions.compute(now: now)
+            if t.active {
+                state = t
+            } else {
+                state = cached ?? t
+            }
+        }
+        if let c = CodexCache.load() { codexState = c }
     }
 
     func render() {
@@ -497,6 +598,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             card.mascot.tint = Palette.muted
             fill(card.fill, with: .clear)
         }
+        renderCodex()
     }
 
     private func pct(_ v: Double) -> String { "\(Int((v * 100).rounded()))%" }
@@ -520,6 +622,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }()
     func fmtClock(_ ms: Int64) -> String {
         AppDelegate.clock.string(from: Date(timeIntervalSince1970: Double(ms) / 1000))
+    }
+
+    /// Format a token count as a compact human-readable string: 191M, 29K, 845.
+    func fmtTokens(_ n: Int64) -> String {
+        switch n {
+        case ..<1_000:          return "\(n)"
+        case ..<1_000_000:      return "\(n / 1_000)K"
+        case ..<1_000_000_000:  return "\(n / 1_000_000)M"
+        default:                return String(format: "%.1fB", Double(n) / 1_000_000_000)
+        }
+    }
+
+    /// Format a ms-epoch timestamp as a relative string: "just now", "4m ago", "2h ago".
+    func fmtRelative(_ ms: Int64, now: Date) -> String {
+        let nowMs = Int64(now.timeIntervalSince1970 * 1000)
+        let diffS = (nowMs - ms) / 1000
+        switch diffS {
+        case ..<60:      return "just now"
+        case ..<3600:    return "\(diffS / 60)m ago"
+        default:         return "\(diffS / 3600)h ago"
+        }
+    }
+
+    /// Update the Codex card with the current `codexState`.
+    func renderCodex() {
+        let now = Date()
+        if codexState.active, let tokens = codexState.tokensToday {
+            codexCard.big.stringValue = fmtTokens(tokens)
+            codexCard.big.textColor = Palette.clay
+
+            var parts: [String] = []
+            if let s = codexState.sessionsToday { parts.append("\(s) session\(s == 1 ? "" : "s")") }
+            if let ms = codexState.lastActiveMs { parts.append(fmtRelative(ms, now: now)) }
+            if let m = codexState.topModel { parts.append(m) }
+            codexCard.sub.stringValue = parts.joined(separator: " · ")
+        } else {
+            codexCard.big.stringValue = "Idle"
+            codexCard.big.textColor = Palette.nearBlack
+            let lastPart: String
+            if let ms = codexState.lastActiveMs {
+                lastPart = "last active \(fmtRelative(ms, now: now))"
+            } else {
+                lastPart = "no activity today"
+            }
+            codexCard.sub.stringValue = lastPart
+        }
     }
 }
 

@@ -13,11 +13,13 @@ UIDN="$(id -u)"
 LA="$HOME/Library/LaunchAgents"
 APP_DEST="$HOME/Applications/Argus.app"
 POLLER_DEST="$HOME/.claude/session_usage_poll.py"
+CODEX_POLLER_DEST="$HOME/.claude/codex_usage_poll.py"
 WIDGET_LABEL="com.caiss.argus"
 POLLER_LABEL="com.caiss.argus.poller"
+CODEX_POLLER_LABEL="com.caiss.argus.codex-poller"
 
 # Clean up old com.claude-session-widget.* agents if present.
-for old_label in com.claude-session-widget.app com.claude-session-widget.poller; do
+for old_label in com.claude-session-widget.app com.claude-session-widget.poller com.caiss.argus.codex-poller; do
   launchctl bootout "gui/$UIDN/$old_label" 2>/dev/null || true
   rm -f "$LA/$old_label.plist"
 done
@@ -99,6 +101,27 @@ EOF
     echo "… no cache yet — it writes on the next run once you've used Claude Code."
     echo "  Check ~/.claude/logs/argus-poller.log if it never appears."
   fi
+
+  # --- codex usage poller ---
+  cp "$DIR/codex_usage_poll.py" "$CODEX_POLLER_DEST"
+  cat > "$LA/$CODEX_POLLER_LABEL.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$CODEX_POLLER_LABEL</string>
+  <key>ProgramArguments</key>
+  <array><string>$PY</string><string>$CODEX_POLLER_DEST</string></array>
+  <key>RunAtLoad</key><true/>
+  <key>StartInterval</key><integer>600</integer>
+  <key>StandardOutPath</key><string>$HOME/.claude/logs/argus-codex-poller.log</string>
+  <key>StandardErrorPath</key><string>$HOME/.claude/logs/argus-codex-poller.log</string>
+</dict>
+</plist>
+EOF
+  launchctl bootout  "gui/$UIDN/$CODEX_POLLER_LABEL" 2>/dev/null || true
+  launchctl bootstrap "gui/$UIDN" "$LA/$CODEX_POLLER_LABEL.plist"
+  echo "✓ codex poller installed ($PY)"
 else
   echo "• skipping poller (--widget-only): widget will show a transcript estimate."
 fi
