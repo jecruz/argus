@@ -50,7 +50,7 @@ hardening pass:
 
 - **Python pollers:** 100% line coverage required. Run:
   ```bash
-  python3 -m pytest tests/ -v --cov=session_usage_poll --cov-report=term-missing
+  python3 -m pytest tests/ -v --cov=session_usage_poll --cov=codex_usage_poll --cov-report=term-missing
   ```
 - **Swift widget:** No automated tests today (no Xcode project). Logic changes
   to `Sessions.compute()` or `UsageCache.load()` must be manually verified
