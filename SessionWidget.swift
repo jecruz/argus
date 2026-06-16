@@ -63,11 +63,11 @@ struct SessionState {
 }
 
 struct CodexState {
-    var active: Bool
-    var tokensToday: Int64?
-    var sessionsToday: Int?
-    var lastActiveMs: Int64?
-    var topModel: String?
+    var active: Bool = false
+    var tokensToday: Int64? = nil
+    var sessionsToday: Int? = nil
+    var lastActiveMs: Int64? = nil
+    var topModel: String? = nil
 }
 
 // MARK: - Authoritative usage cache
@@ -319,6 +319,7 @@ final class ClawdView: NSView {
 // MARK: - Card view
 
 final class CardView: NSView {
+    static let height: CGFloat = 108
     let mascot = ClawdView()
     let title = NSTextField(labelWithString: "Claude session")
     let big = NSTextField(labelWithString: "—")
@@ -407,6 +408,7 @@ final class CardView: NSView {
 /// Floating card showing daily Codex token usage. Same ivory background and
 /// corner radius as `CardView` but uses the full width — no mascot.
 final class CodexCardView: NSView {
+    static let height: CGFloat = 96
     let title = NSTextField(labelWithString: "Codex")
     let big   = NSTextField(labelWithString: "—")
     let sub   = NSTextField(labelWithString: "")
@@ -460,7 +462,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var tick: Timer?
     var poll: Timer?
     var state = SessionState(active: false, startMs: nil, endMs: nil, lastActivityMs: nil)
-    var codexState = CodexState(active: false, tokensToday: nil, sessionsToday: nil, lastActiveMs: nil, topModel: nil)
+    var codexState = CodexState()
     var contextMenu: NSMenu!
     var onTop = true
 
@@ -469,7 +471,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
-        let size = NSSize(width: 264, height: 208)
+        let gap: CGFloat = 4
+        let size = NSSize(width: 264, height: CardView.height + CodexCardView.height + gap)
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         let origin = NSPoint(x: screen.maxX - size.width - 24, y: screen.maxY - size.height - 24)
 
@@ -483,14 +486,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.level = .floating
 
         let contentView = NSView(frame: NSRect(origin: .zero, size: size))
-        contentView.wantsLayer = true
-        contentView.layer?.backgroundColor = NSColor.clear.cgColor
         window.contentView = contentView
 
-        card = CardView(frame: NSRect(x: 0, y: 100, width: size.width, height: 108))
+        card = CardView(frame: NSRect(x: 0, y: CodexCardView.height + gap, width: size.width, height: CardView.height))
         contentView.addSubview(card)
 
-        codexCard = CodexCardView(frame: NSRect(x: 0, y: 0, width: size.width, height: 96))
+        codexCard = CodexCardView(frame: NSRect(x: 0, y: 0, width: size.width, height: CodexCardView.height))
         contentView.addSubview(codexCard)
 
         // Restore saved position only — keep the new size so the layout applies.

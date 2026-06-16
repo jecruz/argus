@@ -24,11 +24,11 @@ import os
 import sqlite3
 import tempfile
 import time
-from pathlib import Path
 
 HOME = os.path.expanduser("~")
 DB_PATH = os.path.join(HOME, ".codex", "state_5.sqlite")
 CACHE = os.path.join(HOME, ".claude", "codex-usage.json")
+CACHE_DIR = os.path.dirname(CACHE)
 ACTIVE_THRESHOLD_MS = 12 * 60 * 1000   # 12 minutes in milliseconds
 WINDOW_MS = 24 * 3600 * 1000           # 24-hour lookback window in milliseconds
 
@@ -38,13 +38,12 @@ WINDOW_MS = 24 * 3600 * 1000           # 24-hour lookback window in milliseconds
 def write_cache(d: dict):
     """Write cache dict to CACHE atomically with mode 0o600 (owner r/w only)."""
     d["fetched_ms"] = int(time.time() * 1000)
-    cache_dir = os.path.dirname(CACHE)
-    fd, tmp = tempfile.mkstemp(dir=cache_dir, prefix=".codex-usage-", suffix=".tmp")
+    fd, tmp = tempfile.mkstemp(dir=CACHE_DIR, prefix=".codex-usage-", suffix=".tmp")
     try:
         os.fchmod(fd, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             json.dump(d, fh)
-    except:
+    except Exception:
         try:
             os.unlink(tmp)
         except OSError:  # pragma: no cover
